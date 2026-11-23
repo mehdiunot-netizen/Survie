@@ -1,1 +1,237 @@
 
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Complexe — Jeu des feuilles</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#080c10;color:#d9e4e8;font-family:monospace;overflow:hidden}
+canvas{display:block;width:100vw;height:100vh;touch-action:none}
+#message{position:absolute;top:12px;left:12px;right:12px;text-align:center;pointer-events:none;text-shadow:0 2px 5px black}
+#controls{position:absolute;bottom:22px;left:20px;display:grid;grid-template-columns:repeat(3,55px);gap:5px}
+button{background:#25343b;color:white;border:1px solid #65777b;border-radius:8px;font-size:22px;height:55px;touch-action:none}
+#actions{position:absolute;bottom:30px;right:18px;display:grid;gap:10px}
+#actions button{font-size:13px;width:110px}
+#computer{display:none;position:absolute;inset:12%;background:#071a18;border:2px solid #4baf83;padding:20px;overflow:auto;color:#9fffc2}
+#computer button{font-size:15px;padding:8px}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="message"></div>
+
+<div id="controls">
+<div></div><button data-move="up">▲</button><div></div>
+<button data-move="left">◀</button>
+<button data-move="down">▼</button>
+<button data-move="right">▶</button>
+</div>
+
+<div id="actions">
+<button id="interact">INTERAGIR</button>
+<button id="inventory">SAC</button>
+</div>
+
+<div id="computer">
+<h2>TERMINAL DU COMPLEXE</h2>
+<div id="stats"></div>
+<button id="close">FERMER</button>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+const msg=document.getElementById("message");
+const computer=document.getElementById("computer");
+const stats=document.getElementById("stats");
+
+function resize(){
+ canvas.width=innerWidth*devicePixelRatio;
+ canvas.height=innerHeight*devicePixelRatio;
+ ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+addEventListener("resize",resize);
+resize();
+
+const world={w:1800,h:1300};
+const player={x:300,y:300,r:15,speed:190};
+const terminal={x:250,y:230};
+const seller={x:530,y:350};
+let money=0;
+let sold=0;
+let quota=200;
+let day=1;
+let seconds=0;
+let carried=0;
+let papers=[];
+let keys={};
+let last=performance.now();
+let noticeUntil=0;
+
+function notice(text){
+ msg.textContent=text;
+ noticeUntil=performance.now()+2800;
+}
+
+function spawnPapers(){
+ while(papers.length<150){
+  papers.push({
+   x:60+Math.random()*(world.w-120),
+   y:60+Math.random()*(world.h-120)
+  });
+ }
+}
+spawnPapers();
+
+function distance(a,b){
+ return Math.hypot(a.x-b.x,a.y-b.y);
+}
+
+function interact(){
+ if(computer.style.display==="block")return;
+ if(distance(player,terminal)<65){
+  openComputer();
+  return;
+ }
+ if(distance(player,seller)<75){
+  if(carried===0){notice("Aucune feuille à vendre");return;}
+  money+=carried;
+  sold+=carried;
+  notice(carried+" feuilles vendues");
+  carried=0;
+  return;
+ }
+ let nearest=-1, best=55;
+ papers.forEach((p,i)=>{
+  const d=distance(player,p);
+  if(d<best){best=d;nearest=i;}
+ });
+ if(nearest>=0){
+  if(carried>=400){notice("Inventaire plein");return;}
+  papers.splice(nearest,1);
+  carried++;
+  notice("Feuille récupérée");
+ }else{
+  notice("Rien à portée");
+ }
+}
+
+function openComputer(){
+ stats.innerHTML=
+ "<p>JOUR : "+day+"</p>"+
+ "<p>HEURE : "+String(Math.floor(seconds/60)%24).padStart(2,"0")+":"+
+ String(Math.floor(seconds)%60).padStart(2,"0")+"</p>"+
+ "<p>ARGENT : "+money+" crédits</p>"+
+ "<p>QUOTA : "+sold+" / "+quota+"</p>"+
+ "<p>INVENTAIRE : "+carried+" / 400</p>"+
+ "<p>ROBOTS : non débloqués</p>";
+ computer.style.display="block";
+}
+
+document.getElementById("interact").onclick=interact;
+document.getElementById("inventory").onclick=()=>{
+ notice("Inventaire : "+carried+"/400 feuilles");
+};
+document.getElementById("close").onclick=()=>{
+ computer.style.display="none";
+};
+
+document.querySelectorAll("[data-move]").forEach(b=>{
+ const k=b.dataset.move;
+ b.addEventListener("pointerdown",e=>{
+  e.preventDefault();keys[k]=true;
+  b.setPointerCapture(e.pointerId);
+ });
+ const stop=()=>keys[k]=false;
+ b.addEventListener("pointerup",stop);
+ b.addEventListener("pointercancel",stop);
+ b.addEventListener("lostpointercapture",stop);
+});
+
+addEventListener("keydown",e=>{
+ const map={ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right",w:"up",s:"down",a:"left",d:"right"};
+ if(map[e.key])keys[map[e.key]]=true;
+ if(e.key==="e"&&!e.repeat)interact();
+});
+addEventListener("keyup",e=>{
+ const map={ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right",w:"up",s:"down",a:"left",d:"right"};
+ if(map[e.key])keys[map[e.key]]=false;
+});
+
+function update(dt){
+ if(computer.style.display==="block")return;
+ let dx=(keys.right?1:0)-(keys.left?1:0);
+ let dy=(keys.down?1:0)-(keys.up?1:0);
+ const len=Math.hypot(dx,dy)||1;
+ player.x=Math.max(20,Math.min(world.w-20,player.x+dx/len*player.speed*dt));
+ player.y=Math.max(20,Math.min(world.h-20,player.y+dy/len*player.speed*dt));
+ seconds+=dt*4;
+ if(seconds>=360){
+  seconds=0;
+  if(sold<quota)notice("Quota journalier non atteint");
+  else notice("Quota journalier atteint");
+  day++;
+  sold=0;
+  quota+=25;
+ }
+ if(papers.length<100)spawnPapers();
+}
+
+function draw(){
+ const w=innerWidth,h=innerHeight;
+ ctx.fillStyle="#10171b";ctx.fillRect(0,0,w,h);
+ const cx=player.x-w/2,cy=player.y-h/2;
+ ctx.save();ctx.translate(-cx,-cy);
+
+ ctx.fillStyle="#1b252b";
+ ctx.fillRect(0,0,world.w,world.h);
+
+ ctx.strokeStyle="#2b383d";
+ ctx.lineWidth=2;
+ for(let x=0;x<world.w;x+=100){
+  ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,world.h);ctx.stroke();
+ }
+ for(let y=0;y<world.h;y+=100){
+  ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(world.w,y);ctx.stroke();
+ }
+
+ ctx.fillStyle="#e2dfb8";
+ papers.forEach(p=>ctx.fillRect(p.x-5,p.y-6,10,12));
+
+ ctx.fillStyle="#287e61";
+ ctx.fillRect(terminal.x-23,terminal.y-23,46,46);
+ ctx.fillStyle="#b2ffe2";
+ ctx.font="12px monospace";
+ ctx.fillText("PC",terminal.x-8,terminal.y+4);
+
+ ctx.fillStyle="#a98237";
+ ctx.fillRect(seller.x-30,seller.y-25,60,50);
+ ctx.fillStyle="white";
+ ctx.fillText("VENTE",seller.x-19,seller.y+4);
+
+ ctx.fillStyle="#d4e9f0";
+ ctx.beginPath();ctx.arc(player.x,player.y,player.r,0,Math.PI*2);ctx.fill();
+ ctx.restore();
+
+ const gradient=ctx.createRadialGradient(w/2,h/2,40,w/2,h/2,Math.max(w,h)*0.7);
+ gradient.addColorStop(0,"rgba(0,0,0,0)");
+ gradient.addColorStop(1,"rgba(0,0,0,.78)");
+ ctx.fillStyle=gradient;ctx.fillRect(0,0,w,h);
+}
+
+function loop(t){
+ const dt=Math.min((t-last)/1000,.05);
+ last=t;
+ update(dt);
+ draw();
+ if(t>noticeUntil)msg.textContent="";
+ requestAnimationFrame(loop);
+}
+notice("Explorez le complexe");
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+
